@@ -24,7 +24,11 @@ except ImportError as e:
     print(f"crawl_musinsa 모듈 import 실패: {e}", file=sys.stderr)
     raise
 
-app = FastAPI(title="EveryWear AI API", version="1.0.0")
+app = FastAPI(
+    title="EveryWear AI API", 
+    version="1.0.0",
+    root_path="/crawler"
+    )
 
 # CORS 설정
 app.add_middleware(
