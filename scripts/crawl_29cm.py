@@ -102,7 +102,7 @@ def extract_starpoint(driver, wait_time=10):
                 continue
 
         if not container:
-            return "-"
+            return None
 
         # 별 5개 찾기 (각 <i class="relative..."> 안의 <i class="absolute...">)
         # XPath: 각 relative i 안의 absolute i
@@ -113,7 +113,7 @@ def extract_starpoint(driver, wait_time=10):
             star_elements = container.find_elements(By.XPATH, ".//i[contains(@class, 'absolute') and contains(@class, 'inset-0')]")
 
         if len(star_elements) == 0:
-            return "-"
+            return None
 
         total_score = 0.0
 
@@ -136,11 +136,11 @@ def extract_starpoint(driver, wait_time=10):
         if 0.0 <= total_score <= 5.0:
             return round(total_score, 1)  # 소수점 첫째 자리까지 반올림
         else:
-            return "-"
+            return None
 
     except Exception as e:
         print(f"별점 추출 중 오류: {str(e)}")
-        return "-"
+        return None
 
 
 # 29CM 상품 상세 페이지 크롤링
@@ -359,7 +359,7 @@ def crawl_product_details(url):
         print(f"크롤링 중 오류 발생: {str(e)}")
         import traceback
         traceback.print_exc()
-        return {"shoppingmall_name": "29CM", "product_url": url, "category": "-", "product_img_url": "-", "product_name": "-", "brand_name": "-", "price": "-", "star_point": "-", "AI_review": None}
+        return {"shoppingmall_name": "29CM", "product_url": url, "category": "-", "product_img_url": "-", "product_name": "-", "brand_name": "-", "price": "-", "star_point": None, "AI_review": None}
 
     finally:
         driver.quit()
