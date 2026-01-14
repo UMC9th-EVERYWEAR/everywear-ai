@@ -11,6 +11,7 @@ from pydantic import BaseModel, HttpUrl
 from typing import Optional
 import sys
 import os
+import asyncio
 
 # scripts 폴더의 crawl_musinsa 모듈 import
 scripts_path = os.path.join(os.path.dirname(__file__), 'scripts')
@@ -72,7 +73,8 @@ async def health_check():
 @app.post("/crawl/musinsa", response_model=CrawlResponse)
 async def crawl_musinsa_product(request: CrawlRequest):
     try:
-        result = crawl_product_details(request.product_url)
+        # 동기 함수를 별도 스레드에서 실행하여 이벤트 루프 블로킹 방지
+        result = await asyncio.to_thread(crawl_product_details, request.product_url)
         
         # star_point 처리 (크롤링에서 None 또는 float 반환, None은 그대로 유지)
         star_point = result.get('star_point')
