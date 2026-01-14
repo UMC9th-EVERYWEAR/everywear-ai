@@ -9,6 +9,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from selenium.webdriver.chrome.service import Service
 import time
+from zigzag_category_ai import classify_category_with_gemini
 
 # Chrome WebDriver 설정
 def setup_driver():
@@ -80,8 +81,6 @@ def crawl_product_details(url):
         # 2. 상품 URL
         result['product_url'] = url
 
-        # 3. 카테고리 (고정값)
-        result['category'] = "-"
 
         # 4. 대표 이미지 추출
         image_xpath_absolute = "//*[@id='__next']/div[1]/div[1]/div/div[1]/div[1]/div/div/div[1]/div[1]/div/div/picture/img"
@@ -105,6 +104,14 @@ def crawl_product_details(url):
             [product_name_xpath_case1, product_name_xpath_case2, product_name_xpath_relative]
         )
         result['product_name'] = product_name if product_name else "-"
+
+        # 3. 카테고리 분류 (상품명 추출 후 해야 해서 여기에 있음)
+        try:
+            category = classify_category_with_gemini(result['product_name'])
+            result['category'] = category
+        except Exception as e:
+            print(f"카테고리 분류 중 오류 발생: {str(e)}, 기본값 '기타' 사용")
+            result['category'] = "기타"
 
         # 6. 브랜드명 추출
         brand_xpath_absolute = "//*[@id='__next']/div[1]/div[1]/div/div[2]/button[1]/span"
