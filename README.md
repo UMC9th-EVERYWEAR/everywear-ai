@@ -69,4 +69,4 @@ python main.py
 ## API 문서
 
 서버 실행 후 다음 URL에서 Swagger UI를 확인할 수 있습니다:
-- `http://localhost:8001/docs`
+- `http://dev-app-alb-160354142.ap-northeast-2.elb.amazonaws.com/crawler/docs`
