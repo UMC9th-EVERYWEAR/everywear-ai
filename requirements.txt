@@ -3,3 +3,4 @@ uvicorn[standard]==0.32.0
 pydantic==2.9.2
 selenium==4.27.0
 webdriver-manager==4.0.2
+requests==2.31.0
