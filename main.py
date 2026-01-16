@@ -45,6 +45,7 @@ except ImportError as e:
 # crawl_wconcept 모듈 import
 try:
     from crawl_wconcept import crawl_product_details as crawl_wconcept_product_details
+    from crawl_wconcept_reviews import collect_wconcept_reviews
 except ImportError as e:
     print(f"crawl_wconcept 모듈 import 실패: {e}", file=sys.stderr)
     raise
@@ -157,6 +158,21 @@ class Cm29ReviewCrawlResponse(BaseModel):
     product_url: str
     total_reviews: int
     reviews: List[Cm29ReviewItem]
+
+# W concept 리뷰용 응답 모델
+class WconceptReviewItem(BaseModel):
+    score: float
+    option: str
+    user_id: str
+    date: str
+    satisfaction: Dict[str, str]
+    content: str
+    images: List[str]
+
+class WconceptReviewCrawlResponse(BaseModel):
+    product_url: str
+    total_reviews: int
+    reviews: List[WconceptReviewItem]
 
 
 @app.get("/")
@@ -389,6 +405,29 @@ async def crawl_29cm_product_reviews(request: ReviewCrawlRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"리뷰 크롤링 중 오류 발생: {str(e)}")
 
+@app.post("/crawl/wconcept/reviews", response_model=WconceptReviewCrawlResponse)
+async def crawl_wconcept_product_reviews(request: ReviewCrawlRequest):
+    try:
+        max_reviews = request.review_count if request.review_count else 20
+        # asyncio.to_thread를 통해 비동기로 실행
+        reviews = await asyncio.to_thread(collect_wconcept_reviews, request.product_url, max_reviews)
+        
+        # 리뷰가 하나도 수집되지 않았을 때 404를 명시적으로 반환 (500 방지)
+        if not reviews:
+            raise HTTPException(status_code=404, detail="해당 상품의 리뷰를 찾을 수 없습니다. (리뷰가 없거나 로딩 실패)")
+
+        # 응답 데이터 구성
+        return WconceptReviewCrawlResponse(
+            product_url=request.product_url,
+            total_reviews=len(reviews),
+            reviews=reviews
+        )
+    except HTTPException as he:
+        raise he # 정의된 HTTP 에러는 그대로 던짐
+    except Exception as e:
+        # 실제 어떤 에러가 났는지 로그 출력
+        print(f"[CRITICAL] WConcept Reviews Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"서버 내부 오류: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

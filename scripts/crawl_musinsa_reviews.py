@@ -2,226 +2,172 @@
 # -*- coding: utf-8 -*-
 
 ####################################
-### 무신사 리뷰 크롤링 ###
+### 무신사 리뷰 크롤링 (셀레니움 강화 버전) ###
 ####################################
 
-import requests
-import json
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
 import time
 import re
+import requests
 from typing import List, Dict, Optional
 from urllib.parse import urlparse, parse_qs
 
-
-def extract_product_no_from_share_url(share_url: str) -> Optional[str]:
-    """
-    공유 URL에서 상품번호를 추출합니다.
-    예: https://musinsa.onelink.me/ANAQ/g4nadm4c -> 상품번호 추출
+def setup_driver():
+    """Chrome WebDriver 설정 (봇 감지 우회 및 최적화)"""
+    options = webdriver.ChromeOptions()
+    options.add_argument('--headless')
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
+    options.add_argument('--window-size=1920,1080')
+    options.add_argument('--disable-blink-features=AutomationControlled')
+    options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
     
-    Args:
-        share_url: 무신사 공유 URL
-        
-    Returns:
-        상품번호 또는 None
-    """
-    try:
-        # 리다이렉트를 따라가서 최종 URL 확인
-        response = requests.head(share_url, allow_redirects=True, timeout=10)
-        final_url = response.url
-        
-        print(f"[INFO] 공유 URL: {share_url}")
-        print(f"[INFO] 최종 URL: {final_url}")
-        
-        # URL에서 상품번호 추출
-        # 패턴 1: /products/12345
-        match = re.search(r'/products/(\d+)', final_url)
-        if match:
-            return match.group(1)
-        
-        # 패턴 2: goodsNo=12345 (쿼리 파라미터)
-        parsed_url = urlparse(final_url)
-        query_params = parse_qs(parsed_url.query)
-        if 'goodsNo' in query_params:
-            return query_params['goodsNo'][0]
-        
-        return None
-        
-    except Exception as e:
-        print(f"[ERROR] 상품번호 추출 실패: {e}")
-        return None
-
+    driver = webdriver.Chrome(options=options)
+    return driver
 
 def extract_product_no_from_url(url: str) -> Optional[str]:
-    """
-    일반 무신사 URL에서 상품번호를 추출합니다.
-    예: https://www.musinsa.com/products/5432652 -> 5432652
-    
-    Args:
-        url: 무신사 상품 URL
-        
-    Returns:
-        상품번호 또는 None
-    """
-    # 공유 URL인 경우
+    """URL에서 상품번호 추출 (공유 URL 및 일반 URL 대응)"""
     if 'onelink.me' in url or 'musinsa.link' in url:
-        return extract_product_no_from_share_url(url)
+        try:
+            response = requests.head(url, allow_redirects=True, timeout=10)
+            url = response.url
+        except: return None
     
-    # 일반 URL인 경우
     match = re.search(r'/products/(\d+)', url)
-    if match:
-        return match.group(1)
-    
-    # 쿼리 파라미터에서 추출
-    parsed_url = urlparse(url)
-    query_params = parse_qs(parsed_url.query)
-    if 'goodsNo' in query_params:
-        return query_params['goodsNo'][0]
-    
-    return None
-
+    return match.group(1) if match else None
 
 def collect_reviews(goods_no: str, target_total: int = 20) -> List[Dict]:
     """
-    특정 상품의 리뷰를 수집합니다.
-    
-    Args:
-        goods_no: 상품 번호
-        target_total: 수집할 리뷰 개수 (기본값: 20)
-        
-    Returns:
-        리뷰 데이터 리스트
+    DOM Recycling을 극복하기 위해 마지막 요소를 추적하며 스크롤 수집
     """
-    all_reviews = []
-    page = 0
-    has_more = True
+    driver = setup_driver()
+    # 전체 리뷰 보기 URL (정렬: 도움순)
+    review_url = f"https://www.musinsa.com/review/goods/{goods_no}?sort=up_cnt_desc"
     
-    print(f"[시작] 상품번호 {goods_no} 리뷰 수집 중...")
-    
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Referer': f'https://www.musinsa.com/products/{goods_no}',
-        'Accept': 'application/json, text/plain, */*',
-        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Origin': 'https://www.musinsa.com',
-        'Connection': 'keep-alive',
-        'Sec-Fetch-Dest': 'empty',
-        'Sec-Fetch-Mode': 'cors',
-        'Sec-Fetch-Site': 'same-site'
-    }
+    collected_reviews = {} # {content_id: review_data} 형태의 중복 방지 저장소
     
     try:
-        while has_more and len(all_reviews) < target_total:
-            # API 요청
-            response = requests.get(
-                'https://goods.musinsa.com/api2/review/v1/view/list',
-                params={
-                    'page': page,
-                    'pageSize': 20,
-                    'goodsNo': goods_no,
-                    'sort': 'up_cnt_desc'
-                },
-                headers=headers,
-                timeout=30
-            )
-            
-            # 응답 확인
-            if response.status_code != 200:
-                print(f"[ERROR] API 요청 실패: {response.status_code}")
-                break
-            
-            # JSON 파싱
-            try:
-                json_data = response.json()
-            except Exception as e:
-                print(f"[ERROR] JSON 파싱 실패: {e}")
-                break
-            
-            # data 필드 확인
-            if json_data is None:
-                print(f"[ERROR] 응답이 None입니다.")
-                break
-            
-            data = json_data.get('data', {})
-            if not data:
-                print(f"[ERROR] 'data' 필드가 없습니다. 응답 구조: {list(json_data.keys())}")
-                break
-            
-            review_list = data.get('list', [])
-            
-            if not review_list:
-                print(f"[INFO] 더 이상 리뷰가 없습니다. (페이지 {page})")
-                break
-            
-            # 리뷰 데이터 처리
-            for item in review_list:
-                if len(all_reviews) >= target_total:
-                    break
-                
-                # 만족도 설문 데이터 처리 (None 안전 처리)
-                survey = {}
-                satisfaction_data = item.get('reviewSurveySatisfaction') or {}
-                questions = satisfaction_data.get('questions') or []
-                
-                for q in questions:
-                    attribute = q.get('attribute', '')
-                    answers = q.get('answers') or []
-                    answer_text = answers[0].get('answerShortText', '') if answers else ''
-                    if attribute:
-                        survey[attribute] = answer_text
-                
-                # 이미지 URL 완성
-                images = []
-                for img in (item.get('images') or []):
-                    image_url = img.get('imageUrl', '')
-                    if image_url:
-                        # 이미 전체 URL인 경우
-                        if image_url.startswith('http'):
-                            images.append(image_url)
-                        else:
-                            images.append(f"https://image.msscdn.net{image_url}")
-                
-                # 사용자 정보 안전 처리
-                user_profile = item.get('userProfileInfo') or {}
-                
-                # 리뷰 데이터 구성
-                review_data = {
-                    'product_no': goods_no,
-                    'review_no': str(item.get('no', '')),  # 문자열로 변환
-                    'content': (item.get('content') or '').strip(),
-                    'date': item.get('createDate', ''),
-                    'score': int(item.get('grade', 0)),
-                    'option': item.get('goodsOption', ''),
-                    'user_info': {
-                        'sex': user_profile.get('reviewSex', '미선택'),
-                        'height': f"{user_profile.get('userHeight', '')}cm" if user_profile.get('userHeight') else '',
-                        'weight': f"{user_profile.get('userWeight', '')}kg" if user_profile.get('userWeight') else ''
-                    },
-                    'satisfaction': survey,
-                    'help_count': item.get('likeCount', 0),
-                    'images': images
-                }
-                
-                all_reviews.append(review_data)
-            
-            print(f"   -> 현재 {len(all_reviews)}개 수집됨 (페이지 {page})")
-            
-            # 다음 페이지 존재 여부 확인
-            page_info = data.get('page', {})
-            total_pages = page_info.get('totalPages', 1)
-            
-            if page >= total_pages - 1:
-                has_more = False
-            
-            page += 1
-            
-            # 차단 방지 딜레이
-            time.sleep(0.6)
+        print(f"[정보] 무신사 상품번호 {goods_no} 리뷰 수집 시작...")
+        driver.get(review_url)
         
-        return all_reviews
-        
+        # 페이지 본문 로드 대기
+        WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+        time.sleep(3)
+
+        scroll_attempts = 0
+        max_attempts = 50 # 충분한 스크롤 시도 횟수 설정
+
+        while len(collected_reviews) < target_total and scroll_attempts < max_attempts:
+            # 현재 화면(DOM)에 존재하는 리뷰 노드들 획득
+            items = driver.find_elements(By.CSS_SELECTOR, "div.gtm-impression-content")
+            
+            if not items:
+                driver.execute_script("window.scrollBy(0, 1000);")
+                time.sleep(1)
+                scroll_attempts += 1
+                continue
+
+            current_batch_new = 0
+            for item in items:
+                try:
+                    # 1. 고유 ID 추출 (중복 체크 핵심)
+                    review_id = item.get_attribute("data-content-id")
+                    if not review_id or review_id in collected_reviews:
+                        continue
+
+                    # 2. 닉네임 및 작성일
+                    nickname = item.find_element(By.CSS_SELECTOR, "span[class*='Nickname']").text.strip()
+                    date_val = item.find_element(By.CSS_SELECTOR, "span[class*='PurchaseDate']").text.strip()
+                    
+                    # 3. 별점 (StarsScore 내의 텍스트 숫자 추출)
+                    try:
+                        score_text = item.find_element(By.CSS_SELECTOR, "div[class*='StarsScore'] span").text.strip()
+                        score = int(score_text)
+                    except:
+                        score = 5
+
+                    # 4. 옵션/체형/만족도 (반복되는 Container 구조 파싱)
+                    options_info = item.find_elements(By.CSS_SELECTOR, "div[class*='OptionRow__Container']")
+                    survey = {}
+                    option_text = ""
+                    user_body = {"sex": "미선택", "height": "", "weight": ""}
+
+                    for opt in options_info:
+                        spans = opt.find_elements(By.TAG_NAME, "span")
+                        if len(spans) < 2: continue
+                        label = spans[0].text.strip()
+                        value = spans[1].text.strip()
+                        
+                        if "구매옵션" in label:
+                            option_text = value
+                        elif "체형정보" in label:
+                            parts = [p.strip() for p in value.split('·')]
+                            user_body["sex"] = parts[0] if len(parts) > 0 else "미선택"
+                            user_body["height"] = parts[1] if len(parts) > 1 else ""
+                            user_body["weight"] = parts[2] if len(parts) > 2 else ""
+                        elif "만족도" in label:
+                            # '사이즈 조금 큼 · 색감 비슷' 구조 파싱
+                            s_parts = [s.strip() for s in value.split('·')]
+                            for i, s_val in enumerate(s_parts):
+                                survey[f"satisfaction_{i}"] = s_val
+
+                    # 5. 리뷰 텍스트 (더보기 이전 텍스트만 가져오거나 전체 구조 선택)
+                    content = item.find_element(By.CSS_SELECTOR, "div[class*='ExpandableContent'] span[class*='text-black']").text.strip()
+
+                    # 6. 이미지 URL 리스트
+                    images = [img.get_attribute("src") for img in item.find_elements(By.CSS_SELECTOR, "div[class*='ExpandableImageGroup'] img")]
+
+                    # 7. 도움돼요(추천수)
+                    try:
+                        help_text = item.find_element(By.CSS_SELECTOR, "button[class*='HelpButton'] span").text.strip()
+                        help_count = int(re.sub(r'[^0-9]', '', help_text))
+                    except:
+                        help_count = 0
+
+                    # 딕셔너리에 저장 (ID 기반 자동 중복 제거)
+                    collected_reviews[review_id] = {
+                        'product_no': goods_no,
+                        'review_no': review_id,
+                        'content': content,
+                        'date': date_val,
+                        'score': score,
+                        'option': option_text,
+                        'user_info': user_body,
+                        'satisfaction': survey,
+                        'help_count': help_count,
+                        'images': images
+                    }
+                    current_batch_new += 1
+                    
+                    if len(collected_reviews) >= target_total:
+                        break
+                        
+                except Exception:
+                    continue
+
+            print(f"   -> 수집 중: {len(collected_reviews)}개 확보 (새로 발견: {current_batch_new}개)")
+
+            # 8. 스크롤 전략 수정: 
+            # 현재 찾은 아이템 중 '가장 마지막 요소'로 화면을 이동시켜 무한 스크롤 트리거
+            if items:
+                driver.execute_script("arguments[0].scrollIntoView();", items[-1])
+                time.sleep(2) # 새 요소가 로드되고 이전 요소가 DOM에서 제거될 시간 부여
+            
+            scroll_attempts += 1
+            
+        return list(collected_reviews.values())[:target_total]
+
     except Exception as e:
-        print(f"[ERROR] 리뷰 수집 중 오류 발생 (상품번호 {goods_no}): {e}")
-        import traceback
-        traceback.print_exc()
-        return all_reviews
+        print(f"[오류] 크롤링 중 중단됨: {e}")
+        return list(collected_reviews.values())
+    finally:
+        driver.quit()
+
+if __name__ == "__main__":
+    # 테스트 코드
+    results = collect_reviews("5685149", 20)
+    print(f"\n최종 수집 완료: {len(results)}개")
