@@ -7,8 +7,8 @@
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, HttpUrl
-from typing import Optional
+from pydantic import BaseModel
+from typing import Optional, List, Dict
 import sys
 import os
 import asyncio
@@ -21,6 +21,7 @@ if scripts_path not in sys.path:
 # crawl_musinsa 모듈 import
 try:
     from crawl_musinsa import crawl_product_details
+    from crawl_musinsa_review import extract_product_no_from_url, collect_reviews
 except ImportError as e:
     print(f"crawl_musinsa 모듈 import 실패: {e}", file=sys.stderr)
     raise
@@ -47,10 +48,10 @@ except ImportError as e:
     raise
 
 app = FastAPI(
-    title="EveryWear AI API", 
+    title="EveryWear AI API",
     version="1.0.0",
     root_path="/crawler"
-    )
+)
 
 # CORS 설정
 app.add_middleware(
@@ -61,10 +62,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 # 요청 모델
 class CrawlRequest(BaseModel):
     product_url: str
+
+
+class ReviewCrawlRequest(BaseModel):
+    product_url: str
+    review_count: Optional[int] = 20
 
 
 # 응답 모델
@@ -80,6 +85,32 @@ class CrawlResponse(BaseModel):
     AI_review: Optional[str] = None
 
 
+class UserInfo(BaseModel):
+    sex: str
+    height: str
+    weight: str
+
+
+class ReviewItem(BaseModel):
+    product_no: str
+    review_no: str
+    content: str
+    date: str
+    score: int
+    option: str
+    user_info: UserInfo
+    satisfaction: Dict[str, str]
+    help_count: int
+    images: List[str]
+
+
+class ReviewCrawlResponse(BaseModel):
+    product_no: str
+    product_url: str
+    total_reviews: int
+    reviews: List[ReviewItem]
+
+
 @app.get("/")
 async def root():
     return {"message": "EveryWear AI API Server", "status": "running"}
@@ -90,24 +121,27 @@ async def health_check():
     return {"status": "healthy"}
 
 
+def _normalize_star_point(result: dict) -> Optional[float]:
+    star_point = result.get('star_point')
+    if star_point is None:
+        return None
+    if isinstance(star_point, str):
+        try:
+            return float(star_point)
+        except (ValueError, TypeError):
+            return None
+    if isinstance(star_point, (int, float)):
+        return float(star_point)
+    return None
+
+
 # 무신사 상품 URL을 받아 크롤링해서 상품 정보를 반환함.
 @app.post("/crawl/musinsa", response_model=CrawlResponse)
 async def crawl_musinsa_product(request: CrawlRequest):
     try:
-        # 동기 함수를 별도 스레드에서 실행하여 이벤트 루프 블로킹 방지
         result = await asyncio.to_thread(crawl_product_details, request.product_url)
-        
-        # star_point 처리 (크롤링에서 None 또는 float 반환, None은 그대로 유지)
-        star_point = result.get('star_point')
-        if star_point is None:
-            star_point = None
-        elif isinstance(star_point, str):
-            # 문자열인 경우 숫자로 변환 시도 (예외 처리)
-            try:
-                star_point = float(star_point)
-            except (ValueError, TypeError):
-                star_point = None
-        
+        star_point = _normalize_star_point(result)
+
         return CrawlResponse(
             shoppingmall_name=result.get('shoppingmall_name', '무신사'),
             product_url=result.get('product_url', request.product_url),
@@ -127,19 +161,8 @@ async def crawl_musinsa_product(request: CrawlRequest):
 @app.post("/crawl/zigzag", response_model=CrawlResponse)
 async def crawl_zigzag_product(request: CrawlRequest):
     try:
-        # 동기 함수를 별도 스레드에서 실행하여 이벤트 루프 블로킹 방지
         result = await asyncio.to_thread(crawl_zigzag_product_details, request.product_url)
-
-        # star_point 처리 (크롤링에서 None 또는 float 반환, None은 그대로 유지)
-        star_point = result.get('star_point')
-        if star_point is None:
-            star_point = None
-        elif isinstance(star_point, str):
-            # 문자열인 경우 숫자로 변환 시도 (예외 처리)
-            try:
-                star_point = float(star_point)
-            except (ValueError, TypeError):
-                star_point = None
+        star_point = _normalize_star_point(result)
 
         return CrawlResponse(
             shoppingmall_name=result.get('shoppingmall_name', '지그재그'),
@@ -160,19 +183,8 @@ async def crawl_zigzag_product(request: CrawlRequest):
 @app.post("/crawl/29cm", response_model=CrawlResponse)
 async def crawl_29cm_product(request: CrawlRequest):
     try:
-        # 동기 함수를 별도 스레드에서 실행하여 이벤트 루프 블로킹 방지
         result = await asyncio.to_thread(crawl_29cm_product_details, request.product_url)
-
-        # star_point 처리 (크롤링에서 None 또는 float 반환, None은 그대로 유지)
-        star_point = result.get('star_point')
-        if star_point is None:
-            star_point = None
-        elif isinstance(star_point, str):
-            # 문자열인 경우 숫자로 변환 시도 (예외 처리)
-            try:
-                star_point = float(star_point)
-            except (ValueError, TypeError):
-                star_point = None
+        star_point = _normalize_star_point(result)
 
         return CrawlResponse(
             shoppingmall_name=result.get('shoppingmall_name', '29CM'),
@@ -193,19 +205,8 @@ async def crawl_29cm_product(request: CrawlRequest):
 @app.post("/crawl/wconcept", response_model=CrawlResponse)
 async def crawl_wconcept_product(request: CrawlRequest):
     try:
-        # 동기 함수를 별도 스레드에서 실행하여 이벤트 루프 블로킹 방지
         result = await asyncio.to_thread(crawl_wconcept_product_details, request.product_url)
-
-        # star_point 처리 (크롤링에서 None 또는 float 반환, None은 그대로 유지)
-        star_point = result.get('star_point')
-        if star_point is None:
-            star_point = None
-        elif isinstance(star_point, str):
-            # 문자열인 경우 숫자로 변환 시도 (예외 처리)
-            try:
-                star_point = float(star_point)
-            except (ValueError, TypeError):
-                star_point = None
+        star_point = _normalize_star_point(result)
 
         return CrawlResponse(
             shoppingmall_name=result.get('shoppingmall_name', 'W컨셉'),
@@ -220,6 +221,51 @@ async def crawl_wconcept_product(request: CrawlRequest):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"크롤링 중 오류 발생: {str(e)}")
+
+
+# 무신사 리뷰 크롤링 API
+@app.post("/crawl/musinsa/reviews", response_model=ReviewCrawlResponse)
+async def crawl_musinsa_reviews(request: ReviewCrawlRequest):
+    """
+    무신사 상품 리뷰를 크롤링합니다.
+    - 일반 URL: https://www.musinsa.com/products/5432652
+    - 원클릭 URL: https://musinsa.onelink.me/ANAQ/xxxxx
+    """
+    try:
+        goods_no = extract_product_no_from_url(request.product_url)
+        if not goods_no:
+            raise HTTPException(status_code=400, detail="상품번호를 추출할 수 없습니다.")
+
+        reviews = collect_reviews(goods_no, target_total=request.review_count)
+        if not reviews:
+            raise HTTPException(status_code=404, detail="리뷰를 찾을 수 없습니다.")
+
+        review_items: List[ReviewItem] = []
+        for review in reviews:
+            review_items.append(ReviewItem(
+                product_no=review['product_no'],
+                review_no=review['review_no'],
+                content=review['content'],
+                date=review['date'],
+                score=review['score'],
+                option=review['option'],
+                user_info=UserInfo(**review['user_info']),
+                satisfaction=review['satisfaction'],
+                help_count=review['help_count'],
+                images=review['images']
+            ))
+
+        return ReviewCrawlResponse(
+            product_no=goods_no,
+            product_url=request.product_url,
+            total_reviews=len(review_items),
+            reviews=review_items
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"리뷰 크롤링 중 오류 발생: {str(e)}")
 
 
 if __name__ == "__main__":
