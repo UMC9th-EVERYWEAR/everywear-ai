@@ -37,6 +37,7 @@ except ImportError as e:
 # crawl_29cm 모듈 import
 try:
     from crawl_29cm import crawl_product_details as crawl_29cm_product_details
+    from crawl_29cm_reviews import extract_item_id_from_url, collect_29cm_reviews
 except ImportError as e:
     print(f"crawl_29cm 모듈 import 실패: {e}", file=sys.stderr)
     raise
@@ -130,6 +131,32 @@ class ZigzagReviewCrawlResponse(BaseModel):
     product_url: str
     total_reviews: int
     reviews: List[ZigzagReviewItem]
+
+
+# 29cm 리뷰용 응답 모델
+class Cm29UserInfo(BaseModel):
+    height: str
+    weight: str
+
+
+class Cm29ReviewItem(BaseModel):
+    item_id: str
+    review_id: str
+    user_id: str
+    rating: float
+    content: str
+    option: str
+    date: str
+    user_info: Cm29UserInfo
+    images: List[str]
+    is_gift: bool
+
+
+class Cm29ReviewCrawlResponse(BaseModel):
+    item_id: str
+    product_url: str
+    total_reviews: int
+    reviews: List[Cm29ReviewItem]
 
 
 @app.get("/")
@@ -308,6 +335,57 @@ async def crawl_zigzag_product_reviews(request: ReviewCrawlRequest):
             total_reviews=len(reviews),
             reviews=reviews
         )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"리뷰 크롤링 중 오류 발생: {str(e)}")
+
+
+# 29cm 리뷰 크롤링 API
+@app.post("/crawl/29cm/reviews", response_model=Cm29ReviewCrawlResponse)
+async def crawl_29cm_product_reviews(request: ReviewCrawlRequest):
+    """
+    29cm 상품 리뷰를 크롤링합니다 (Selenium 사용).
+    - URL: https://www.29cm.co.kr/products/3437237?categoryLargeCode=...
+    """
+    try:
+        # URL에서 item_id 추출
+        item_id = extract_item_id_from_url(request.product_url)
+        if not item_id:
+            raise HTTPException(status_code=400, detail="상품 ID를 추출할 수 없습니다.")
+
+        # 리뷰 수집 (URL 전체를 전달!)
+        max_reviews = request.review_count if request.review_count else 20
+        reviews = await asyncio.to_thread(collect_29cm_reviews, request.product_url, max_reviews)
+        #                                                        ^^^^^^^^^^^^^^^^^^^
+        #                                                        URL 전체 전달로 변경
+        
+        if not reviews:
+            raise HTTPException(status_code=404, detail="리뷰를 찾을 수 없습니다.")
+
+        # 응답 모델로 변환
+        review_items: List[Cm29ReviewItem] = []
+        for review in reviews:
+            review_items.append(Cm29ReviewItem(
+                item_id=review['item_id'],
+                review_id=review['review_id'],
+                user_id=review['user_id'],
+                rating=review['rating'],
+                content=review['content'],
+                option=review['option'],
+                date=review['date'],
+                user_info=Cm29UserInfo(**review['user_info']),
+                images=review['images'],
+                is_gift=review['is_gift']
+            ))
+
+        return Cm29ReviewCrawlResponse(
+            item_id=item_id,
+            product_url=request.product_url,
+            total_reviews=len(review_items),
+            reviews=review_items
+        )
+
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"리뷰 크롤링 중 오류 발생: {str(e)}")
 
