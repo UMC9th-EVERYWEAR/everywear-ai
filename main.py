@@ -21,7 +21,7 @@ if scripts_path not in sys.path:
 # crawl_musinsa 모듈 import
 try:
     from crawl_musinsa import crawl_product_details
-    from crawl_musinsa_review import extract_product_no_from_url, collect_reviews
+    from crawl_musinsa_reviews import extract_product_no_from_url, collect_reviews
 except ImportError as e:
     print(f"crawl_musinsa 모듈 import 실패: {e}", file=sys.stderr)
     raise
@@ -29,6 +29,7 @@ except ImportError as e:
 # crawl_zigzag 모듈 import
 try:
     from crawl_zigzag import crawl_product_details as crawl_zigzag_product_details
+    from crawl_zigzag_reviews import crawl_zigzag_reviews
 except ImportError as e:
     print(f"crawl_zigzag 모듈 import 실패: {e}", file=sys.stderr)
     raise
@@ -109,6 +110,26 @@ class ReviewCrawlResponse(BaseModel):
     product_url: str
     total_reviews: int
     reviews: List[ReviewItem]
+
+
+# 지그재그 리뷰용 응답 모델
+class ZigzagReviewerInfo(BaseModel):
+    nickname: Optional[str] = None
+
+
+class ZigzagReviewItem(BaseModel):
+    reviewer_info: ZigzagReviewerInfo
+    satisfaction: Dict[str, str]
+    review_content: str
+    star_rating: Optional[float] = None
+    review_images: List[str]
+    review_date: Optional[str] = None
+
+
+class ZigzagReviewCrawlResponse(BaseModel):
+    product_url: str
+    total_reviews: int
+    reviews: List[ZigzagReviewItem]
 
 
 @app.get("/")
@@ -264,6 +285,29 @@ async def crawl_musinsa_reviews(request: ReviewCrawlRequest):
 
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"리뷰 크롤링 중 오류 발생: {str(e)}")
+
+
+# 지그재그 리뷰 크롤링 API
+@app.post("/crawl/zigzag/reviews", response_model=ZigzagReviewCrawlResponse)
+async def crawl_zigzag_product_reviews(request: ReviewCrawlRequest):
+    """
+    지그재그 상품 리뷰를 크롤링합니다.
+    - URL: https://zigzag.kr/catalog/products/143224732
+    """
+    try:
+        # review_count 필드 사용 (기존 ReviewCrawlRequest 모델 유지)
+        max_reviews = request.review_count if request.review_count else 20
+        
+        # 크롤링 실행 (asyncio로 비동기 처리)
+        reviews = await asyncio.to_thread(crawl_zigzag_reviews, request.product_url, max_reviews)
+        
+        return ZigzagReviewCrawlResponse(
+            product_url=request.product_url,
+            total_reviews=len(reviews),
+            reviews=reviews
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"리뷰 크롤링 중 오류 발생: {str(e)}")
 
