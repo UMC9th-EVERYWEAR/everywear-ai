@@ -104,6 +104,8 @@ def crawl_product_details(url):
                 final_category = "원피스"
             elif category == "블라우스":
                 final_category = "상의"
+            elif category == "상의":
+                final_category = "상의"
             elif category == "셔츠":
                 final_category = "상의"
             elif category == "티셔츠":
