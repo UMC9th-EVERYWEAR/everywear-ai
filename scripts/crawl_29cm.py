@@ -219,6 +219,10 @@ def crawl_product_details(url):
                 final_category = "기타"
             elif category == "이너웨어":
                 final_category = "기타"
+            elif category == "상의" :
+                final_category = "상의"
+            elif category == "원피스" :
+                final_category = "원피스"
             elif category == "해외브랜드":
                 # 추가 XPath 확인: /html/body/main/div/div[1]/div/ul/li[3]/div/div[1]/span
                 sub_category_xpath = "/html/body/main/div/div[1]/div/ul/li[3]/div/div[1]/span"
@@ -247,6 +251,8 @@ def crawl_product_details(url):
                     elif sub_category == "액티브웨어":
                         final_category = "기타"
                     elif sub_category == "셔츠":
+                        final_category = "상의"
+                    elif sub_category == "상의" :
                         final_category = "상의"
                     else:
                         final_category = "기타"
