@@ -72,6 +72,11 @@ def collect_wconcept_reviews(url: str, target_total: int = 20) -> List[Dict]:
     current_page = 1
     
     try:
+        # 모바일 도메인을 PC 도메인으로 변환
+        if 'm.wconcept.co.kr' in url:
+            url = url.replace('m.wconcept.co.kr', 'www.wconcept.co.kr')
+        
+        #리뷰 섹션으로 직접 이동
         target_url = url if "#review" in url else f"{url}#review"
         driver.get(target_url)
         time.sleep(3)

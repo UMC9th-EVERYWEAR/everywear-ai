@@ -27,11 +27,24 @@ def extract_item_id_from_url(url: str) -> Optional[str]:
         item_id 또는 None
     """
     try:
+        # onelink.me 또는 단축 URL 리다이렉트 처리
+        if 'onelink.me' in url or '29cm.link' in url:
+            try:
+                import requests
+                response = requests.head(url, allow_redirects=True, timeout=10)
+                url = response.url
+            except:
+                return None
+        
+        # URL에서 /products/ 다음의 숫자 추출
         match = re.search(r'/products/(\d+)', url)
         if match:
             return match.group(1)
+        
         return None
-    except Exception:
+        
+    except Exception as e:
+        print(f"[ERROR] item_id 추출 실패: {e}")
         return None
 
 

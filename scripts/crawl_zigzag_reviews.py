@@ -107,6 +107,16 @@ def crawl_zigzag_reviews(url, max_reviews=20):
     driver = setup_driver()
     
     try:
+        # s.zigzag.kr 단축 URL 리다이렉트 처리
+        if 's.zigzag.kr' in url or 'zigzag.link' in url:
+            try:
+                import requests
+                response = requests.head(url, allow_redirects=True, timeout=10)
+                url = response.url
+            except:
+                pass
+        
+        # URL에 tab=review 파라미터 추가 (리뷰 탭으로 바로 이동)
         if '?' in url:
             review_url = f"{url}&tab=review"
         else:
