@@ -1,11 +1,15 @@
 FROM python:3.11-slim
 
-# Chrome 및 ChromeDriver 설치 (apt-key 없이)
+# Chrome 및 ChromeDriver 설치를 위한 빌드 도구 추가
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
     unzip \
     ca-certificates \
+    gcc \
+    python3-dev \
+    libssl-dev \
+    libffi-dev \
     && wget -q -O /tmp/google-chrome-key.pub https://dl-ssl.google.com/linux/linux_signing_key.pub \
     && gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg /tmp/google-chrome-key.pub \
     && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
