@@ -59,6 +59,35 @@ def extract_by_xpath(driver, xpath, wait_time=10, is_attribute=False, attribute_
         return "-"
 
 
+# 상품 URL에서 product_num 추출
+def extract_product_num(url):
+    # 모바일 도메인을 PC 도메인으로 변환
+    if 'm.wconcept.co.kr' in url:
+        url = url.replace('m.wconcept.co.kr', 'www.wconcept.co.kr')
+
+    # URL에서 /Product/ 다음의 숫자 추출
+    match = re.search(r'/Product/(\d+)', url)
+    if match:
+        product_num = match.group(1)
+        # 총 15자리로 포맷팅: 맨 앞에 4, 중간은 0으로 채움, 끝에 추출한 상품 번호
+        total_length = 15
+        prefix = "4"
+        zeros_needed = total_length - len(prefix) - len(product_num)
+        if zeros_needed < 0:
+            # 상품 번호가 너무 길면 그대로 반환 (예외 처리)
+            try:
+                return int(product_num)
+            except ValueError:
+                return None
+        formatted_num = prefix + "0" * zeros_needed + product_num
+        try:
+            return int(formatted_num)
+        except ValueError:
+            return None
+    
+    return None
+
+
 # W컨셉 상품 상세 페이지에서 모든 정보 크롤링
 def crawl_product_details(url):
     driver = setup_driver()
@@ -83,7 +112,11 @@ def crawl_product_details(url):
         # 2. 상품 URL
         result['product_url'] = url
 
-        # 3. 카테고리 추출
+        # 3. 상품 번호 추출
+        product_num = extract_product_num(url)
+        result['product_num'] = product_num
+
+        # 4. 카테고리 추출
         category_xpath_absolute = "//*[@id='cateDepth3']/button"
         category_xpath_relative = "//div[@id='cateDepth3']//button | //button[contains(@class, 'category') or contains(@class, 'cate')]"
 
@@ -127,7 +160,7 @@ def crawl_product_details(url):
 
         result['category'] = final_category
 
-        # 4. 대표 이미지 추출
+        # 5. 대표 이미지 추출
         image_xpath_absolute = "//*[@id='img_01']"
         image_xpath_relative = "//img[@id='img_01'] | //div[@id='img_01']//img[1] | //img[contains(@class, 'main') or contains(@class, 'product')][1]"
 
@@ -147,7 +180,7 @@ def crawl_product_details(url):
             )
         result['product_img_url'] = image_url if image_url and image_url != "-" else "-"
 
-        # 5. 상품명 추출
+        # 6. 상품명 추출
         product_name_xpath_absolute = "//*[@id='frmproduct']/div[1]/div/h3"
         product_name_xpath_relative = "//form[@id='frmproduct']//div[1]//h3 | //div[contains(@class, 'product')]//h3[1]"
 
@@ -157,7 +190,7 @@ def crawl_product_details(url):
         )
         result['product_name'] = product_name if product_name else "-"
 
-        # 6. 브랜드명 추출
+        # 7. 브랜드명 추출
         brand_xpath_absolute = "//*[@id='frmproduct']/div[1]/h2/a"
         brand_xpath_relative = "//form[@id='frmproduct']//h2//a | //div[contains(@class, 'product')]//h2//a[1]"
 
@@ -167,7 +200,7 @@ def crawl_product_details(url):
         )
         result['brand_name'] = brand_name if brand_name else "-"
 
-        # 7. 가격 추출 (두 가지 케이스)
+        # 8. 가격 추출 (두 가지 케이스)
         price_xpath_case1 = "//*[@id='frmproduct']/div[3]/dl/dd[2]/em"
         price_xpath_case2 = "//*[@id='frmproduct']/div[3]/dl/dd/em"
         price_xpath_relative = "//form[@id='frmproduct']//div[3]//dl//dd//em | //div[contains(@class, 'price')]//em | //dl[contains(@class, 'price')]//em"
@@ -195,7 +228,7 @@ def crawl_product_details(url):
 
         result['price'] = price
 
-        # 8. 별점 추출
+        # 9. 별점 추출
         starpoint_xpath_absolute = "//*[@id='frmproduct']/div[2]/p[2]"
         starpoint_xpath_relative = "//form[@id='frmproduct']//div[2]//p[2] | //div[contains(@class, 'rating') or contains(@class, 'star') or contains(@class, 'review')]//p"
 
@@ -213,7 +246,7 @@ def crawl_product_details(url):
             except (ValueError, TypeError):
                 result['star_point'] = None
 
-        # 9. AI 리뷰
+        # 10. AI 리뷰
         result['AI_review'] = None
 
         return result
@@ -222,7 +255,9 @@ def crawl_product_details(url):
         print(f"크롤링 중 오류 발생: {str(e)}")
         import traceback
         traceback.print_exc()
-        return {"shoppingmall_name": "W컨셉", "product_url": url, "category": "-", "product_img_url": "-", "product_name": "-", "brand_name": "-", "price": "-", "star_point": None, "AI_review": None}
+        # 예외 발생 시에도 product_num 추출 시도
+        product_num = extract_product_num(url)
+        return {"shoppingmall_name": "W컨셉", "product_url": url, "product_num": product_num, "category": "-", "product_img_url": "-", "product_name": "-", "brand_name": "-", "price": "-", "star_point": None, "AI_review": None}
 
     finally:
         driver.quit()
