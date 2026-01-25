@@ -2,168 +2,166 @@
 # -*- coding: utf-8 -*-
 
 ####################################
-### 지그재그 상품 리뷰 크롤링 ###
+### 지그재그 리뷰 크롤링 (최종 최적화) ###
 ####################################
 
+import random
+import time
+import re
+from typing import List, Dict, Optional
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
-import time
-
+from selenium.common.exceptions import StaleElementReferenceException, NoSuchElementException
 
 def setup_driver():
-    """Chrome WebDriver 설정"""
+    """Chrome WebDriver 설정 (봇 감지 우회 및 최적화)"""
     options = webdriver.ChromeOptions()
     options.add_argument('--headless')
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
+    options.add_argument('--window-size=1920,1080')
     options.add_argument('--disable-blink-features=AutomationControlled')
-    options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option('useAutomationExtension', False)
+    options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36')
     
     driver = webdriver.Chrome(options=options)
+    driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
+        'source': 'Object.defineProperty(navigator, "webdriver", {get: () => undefined})'
+    })
     return driver
 
+def normalize_date(date_str: str) -> str:
+    """날짜 형식 통일 (25.10.12 -> 2025.10.12)"""
+    if not date_str: return ""
+    if date_str.startswith('20'): return date_str
+    match = re.match(r'^(\d{2})\.(\d{2})\.(\d{2})$', date_str)
+    if match:
+        y, m, d = match.groups()
+        return f"20{y}.{m}.{d}"
+    return date_str
 
-def extract_review_data(review_element):
-    """개별 리뷰 요소에서 데이터 추출"""
-    try:
-        review_data = {
-            'reviewer_info': {},
-            'satisfaction': {},
-            'review_content': '',
-            'star_rating': None,
-            'review_images': [],
-            'review_date': None
-        }
-        
-        try:
-            nickname = review_element.find_element(By.CSS_SELECTOR, "p.zds4_s96ru823").text.strip()
-            review_data['reviewer_info']['nickname'] = nickname if nickname else None
-        except:
-            review_data['reviewer_info']['nickname'] = None
-        
-        try:
-            star_elements = review_element.find_elements(By.CSS_SELECTOR, "svg[data-zds-icon='IconStarSolid']")
-            review_data['star_rating'] = float(len(star_elements)) if star_elements else None
-        except:
-            review_data['star_rating'] = None
-        
-        try:
-            date = review_element.find_element(By.CSS_SELECTOR, "p.zds4_s96ru82j").text.strip()
-            review_data['review_date'] = date if date else None
-        except:
-            review_data['review_date'] = None
-        
-        try:
-            image_elements = review_element.find_elements(By.CSS_SELECTOR, ".swiper-slide img[src*='review']")
-            review_data['review_images'] = [img.get_attribute('src') for img in image_elements if img.get_attribute('src')]
-        except:
-            review_data['review_images'] = []
-        
-        try:
-            content_element = review_element.find_element(By.CSS_SELECTOR, "span.zds4_s96ru81z")
-            content = content_element.text.strip()
-            if content.endswith("더보기"):
-                content = content[:-3].strip()
-            review_data['review_content'] = content if content else ''
-        except:
-            review_data['review_content'] = ''
-        
-        try:
-            satisfaction_sections = review_element.find_elements(By.CSS_SELECTOR, "div.css-1y13n9")
-            
-            for section in satisfaction_sections:
-                try:
-                    labels = section.find_elements(By.CSS_SELECTOR, "div.zds4_s96ru82b")
-                    if len(labels) >= 2:
-                        label_text = labels[0].text.strip()
-                        value_text = labels[1].text.strip()
-                        
-                        key_mapping = {
-                            '옵션': 'option',
-                            '사이즈': 'size',
-                            '퀄리티': 'quality',
-                            '색감': 'color',
-                            '정보': 'info'
-                        }
-                        
-                        key = key_mapping.get(label_text, label_text)
-                        review_data['satisfaction'][key] = value_text
-                except:
-                    continue
-        except:
-            pass
-        
-        return review_data
-        
-    except Exception:
-        return None
+def parse_height_weight(text: str) -> tuple:
+    """키/몸무게 텍스트에서 숫자 추출"""
+    h, w = None, None
+    hm = re.search(r'(\d+)cm', text)
+    if hm: h = int(hm.group(1))
+    wm = re.search(r'(\d+)kg', text)
+    if wm: w = int(wm.group(1))
+    return h, w
 
-
-def crawl_zigzag_reviews(url, max_reviews=20):
-    """지그재그 상품 리뷰 크롤링"""
+def crawl_zigzag_reviews(product_url: str, max_reviews: int = 20) -> List[Dict]:
+    """지그재그 리뷰 수집 (통일 형식)"""
     driver = setup_driver()
+    # 리뷰 탭으로 강제 이동
+    review_url = f"{product_url}?tab=review" if '?' not in product_url else f"{product_url}&tab=review"
+    collected_reviews = {} # 중복 방지용
     
     try:
-        if '?' in url:
-            review_url = f"{url}&tab=review"
-        else:
-            review_url = f"{url}?tab=review"
-        
+        print(f"[정보] 지그재그 상품 리뷰 수집 시작: {review_url}")
         driver.get(review_url)
-        
-        WebDriverWait(driver, 15).until(
-            EC.presence_of_element_located((By.TAG_NAME, "body"))
-        )
-        
-        time.sleep(5)
-        
         try:
-            sort_selectors = [
-                "//button[contains(text(), '베스트')]",
-                "//button[contains(text(), '인기')]",
-                "//button[contains(text(), '추천')]",
-                "//select[contains(@class, 'sort')]"
-            ]
-            
-            for selector in sort_selectors:
+            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, "div[data-review-feed-index]")))
+        except: pass
+        
+        time.sleep(2.0)
+
+        scroll_attempts = 0
+        while len(collected_reviews) < max_reviews and scroll_attempts < 50:
+            # 1. 화면 내의 모든 '더보기' 버튼 일괄 클릭 (JS)
+            # 지그재그 더보기 버튼 클래스인 p.zds4_s96ru82b 타겟팅
+            driver.execute_script("""
+                document.querySelectorAll("p.zds4_s96ru82b").forEach(btn => {
+                    if (btn.innerText.includes('더보기')) {
+                        btn.click();
+                    }
+                });
+            """)
+            time.sleep(0.5)
+
+            # 2. 리뷰 아이템 탐색
+            items = driver.find_elements(By.CSS_SELECTOR, "div[data-review-feed-index]")
+            new_found_this_round = 0
+
+            for item in items:
                 try:
-                    sort_button = driver.find_element(By.XPATH, selector)
-                    driver.execute_script("arguments[0].click();", sort_button)
-                    time.sleep(2)
-                    break
+                    review_id = item.get_dom_attribute("data-review-feed-index")
+                    if not review_id or review_id in collected_reviews:
+                        continue
+
+                    # [핵심] 내용 추출: '더보기' 버튼 요소를 제거한 순수 전체 텍스트 수집
+                    content_element = item.find_element(By.CSS_SELECTOR, "span.zds4_s96ru81z")
+                    full_content = driver.execute_script("""
+                        var el = arguments[0];
+                        var clone = el.cloneNode(true);
+                        var moreBtn = clone.querySelector("p.zds4_s96ru82b");
+                        if(moreBtn) moreBtn.remove();
+                        return clone.textContent.trim();
+                    """, content_element)
+
+                    # 별점 (SVG 개수)
+                    try:
+                        stars = item.find_elements(By.CSS_SELECTOR, "svg[data-zds-icon='IconStarSolid']")
+                        rating = len(stars) if stars else 5
+                    except: rating = 5
+                    
+                    # 날짜
+                    try:
+                        date_raw = item.find_element(By.CSS_SELECTOR, "p.zds4_s96ru82j").get_attribute('textContent').strip()
+                        review_date = normalize_date(date_raw)
+                    except: review_date = ""
+
+                    # 이미지
+                    images = [img.get_dom_attribute("src") for img in item.find_elements(By.CSS_SELECTOR, "img[src*='zigzag.kr']")]
+
+                    # 옵션/체형 정보 파싱
+                    opt_text, h, w = "", None, None
+                    # 라벨(quaternary)과 값(tertiary) 스타일을 구분하여 매칭
+                    sections = item.find_elements(By.CSS_SELECTOR, "div.css-1y13n9")
+                    for sec in sections:
+                        try:
+                            label = sec.find_element(By.CSS_SELECTOR, "div.zds4_s96ru82b[style*='quaternary']").get_attribute('textContent').strip()
+                            value = sec.find_element(By.CSS_SELECTOR, "div.zds4_s96ru82b[style*='tertiary']").get_attribute('textContent').strip()
+                            
+                            if "옵션" in label:
+                                opt_text = value.replace('\n', ' ')
+                            elif "정보" in label:
+                                h, w = parse_height_weight(value)
+                        except: continue
+
+                    # main.py UnifiedReviewItem 모델에 맞춘 7개 필드
+                    collected_reviews[review_id] = {
+                        'rating': rating,
+                        'content': full_content,
+                        'review_date': review_date,
+                        'images': images,
+                        'user_height': h,
+                        'user_weight': w,
+                        'option_text': opt_text
+                    }
+                    new_found_this_round += 1
+                    if len(collected_reviews) >= max_reviews: break
+                except: continue
+
+            print(f"   -> 지그재그 현재 {len(collected_reviews)}개 확보 중... (신규: {new_found_this_round})")
+
+            # 3. 13개 정체 구간 돌파 전략 (바닥 강제 스크롤)
+            if new_found_this_round == 0:
+                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                time.sleep(1.5) # 로딩 대기
+            else:
+                try:
+                    # 마지막 요소로 이동하여 다음 데이터 트리거
+                    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", items[-1])
+                    time.sleep(0.8)
                 except:
-                    continue
-        except:
-            pass
-        
-        reviews = []
-        
-        review_elements = driver.find_elements(By.CSS_SELECTOR, "div[data-review-feed-index]")
-        
-        if not review_elements:
-            return []
-        
-        for i, review_element in enumerate(review_elements[:max_reviews]):
-            if i >= max_reviews:
-                break
-            
-            try:
-                driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", review_element)
-                time.sleep(0.5)
-                
-                review_data = extract_review_data(review_element)
-                if review_data and review_data.get('review_content'):
-                    reviews.append(review_data)
-            except Exception:
-                continue
-        
-        return reviews
-        
-    except Exception:
-        return []
-        
+                    driver.execute_script("window.scrollBy(0, 1000);")
+
+            scroll_attempts += 1
+
+        return list(collected_reviews.values())[:max_reviews]
+
     finally:
         driver.quit()
