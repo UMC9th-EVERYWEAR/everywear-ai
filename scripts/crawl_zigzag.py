@@ -9,6 +9,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from selenium.webdriver.chrome.service import Service
 import time
+import re
+import requests
 from zigzag_category_ai import classify_category_with_gemini
 
 # Chrome WebDriver 설정
@@ -57,6 +59,39 @@ def extract_by_xpath(driver, xpath, wait_time=10, is_attribute=False, attribute_
         return "-"
 
 
+# 상품 URL에서 product_num 추출
+def extract_product_num(url):
+    # s.zigzag.kr 단축 URL 리다이렉트 처리
+    if 's.zigzag.kr' in url or 'zigzag.link' in url:
+        try:
+            response = requests.head(url, allow_redirects=True, timeout=10)
+            url = response.url
+        except:
+            pass
+
+    # URL에서 /catalog/products/ 다음의 숫자 추출
+    match = re.search(r'/catalog/products/(\d+)', url)
+    if match:
+        product_num = match.group(1)
+        # 총 15자리로 포맷팅: 맨 앞에 2, 중간은 0으로 채움, 끝에 추출한 상품 번호
+        total_length = 15
+        prefix = "2"
+        zeros_needed = total_length - len(prefix) - len(product_num)
+        if zeros_needed < 0:
+            # 상품 번호가 너무 길면 그대로 반환 (예외 처리)
+            try:
+                return int(product_num)
+            except ValueError:
+                return None
+        formatted_num = prefix + "0" * zeros_needed + product_num
+        try:
+            return int(formatted_num)
+        except ValueError:
+            return None
+    
+    return None
+
+
 # 지그재그 상품 상세 페이지에서 모든 정보 크롤링
 def crawl_product_details(url):
     driver = setup_driver()
@@ -81,6 +116,9 @@ def crawl_product_details(url):
         # 2. 상품 URL
         result['product_url'] = url
 
+        # 3. 상품 번호 추출
+        product_num = extract_product_num(url)
+        result['product_num'] = product_num
 
         # 4. 대표 이미지 추출
         image_xpath_absolute = "//*[@id='__next']/div[1]/div[1]/div/div[1]/div[1]/div/div/div[1]/div[1]/div/div/picture/img"
@@ -105,7 +143,7 @@ def crawl_product_details(url):
         )
         result['product_name'] = product_name if product_name else "-"
 
-        # 3. 카테고리 분류 (상품명 추출 후 해야 해서 여기에 있음)
+        # 5. 카테고리 분류 (상품명 추출 후 해야 해서 여기에 있음)
         try:
             category = classify_category_with_gemini(result['product_name'])
             result['category'] = category
@@ -175,7 +213,9 @@ def crawl_product_details(url):
         print(f"크롤링 중 오류 발생: {str(e)}")
         import traceback
         traceback.print_exc()
-        return {"shoppingmall_name": "지그재그", "product_url": url, "category": "-", "product_img_url": "-", "product_name": "-", "brand_name": "-", "price": "-", "star_point": None, "AI_review": None}
+        # 예외 발생 시에도 product_num 추출 시도
+        product_num = extract_product_num(url)
+        return {"shoppingmall_name": "지그재그", "product_url": url, "product_num": product_num, "category": "-", "product_img_url": "-", "product_name": "-", "brand_name": "-", "price": "-", "star_point": None, "AI_review": None}
 
     finally:
         driver.quit()

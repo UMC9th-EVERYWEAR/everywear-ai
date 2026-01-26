@@ -10,6 +10,7 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from selenium.webdriver.chrome.service import Service
 import time
 import re
+import requests
 
 
 # Chrome WebDriver 설정
@@ -143,6 +144,39 @@ def extract_starpoint(driver, wait_time=10):
         return None
 
 
+# 상품 URL에서 product_num 추출
+def extract_product_num(url):
+    # onelink.me 또는 단축 URL 리다이렉트 처리
+    if 'onelink.me' in url or '29cm.link' in url:
+        try:
+            response = requests.head(url, allow_redirects=True, timeout=10)
+            url = response.url
+        except:
+            return None
+
+    # URL에서 /products/ 다음의 숫자 추출
+    match = re.search(r'/products/(\d+)', url)
+    if match:
+        product_num = match.group(1)
+        # 총 15자리로 포맷팅: 맨 앞에 3, 중간은 0으로 채움, 끝에 추출한 상품 번호
+        total_length = 15
+        prefix = "3"
+        zeros_needed = total_length - len(prefix) - len(product_num)
+        if zeros_needed < 0:
+            # 상품 번호가 너무 길면 그대로 반환 (예외 처리)
+            try:
+                return int(product_num)
+            except ValueError:
+                return None
+        formatted_num = prefix + "0" * zeros_needed + product_num
+        try:
+            return int(formatted_num)
+        except ValueError:
+            return None
+    
+    return None
+
+
 # 29CM 상품 상세 페이지 크롤링
 def crawl_product_details(url):
     driver = setup_driver()
@@ -175,7 +209,11 @@ def crawl_product_details(url):
         # 2. 상품 URL
         result['product_url'] = url
 
-        # 3. 카테고리 추출
+        # 3. 상품 번호 추출
+        product_num = extract_product_num(url)
+        result['product_num'] = product_num
+
+        # 4. 카테고리 추출
         category_xpath_absolute = "/html/body/main/div/div[1]/div/ul/li[2]/div/div[1]/span"
         category_xpath_relative = "//main//ul//li[2]//span[1] | //nav//span[contains(text(), '/')]"
 
@@ -288,7 +326,7 @@ def crawl_product_details(url):
 
         result['category'] = final_category
 
-        # 4. 대표 이미지 추출
+        # 5. 대표 이미지 추출
         image_xpath_absolute = "/html/body/main/div/div[2]/div[2]/div[1]/section/div/div/div[1]/div[1]/img"
         image_xpath_relative = "//main//section//img[1] | //div[contains(@class, 'product')]//img[1] | //div[contains(@class, 'image')]//img[1]"
 
@@ -300,7 +338,7 @@ def crawl_product_details(url):
         )
         result['product_img_url'] = image_url if image_url else "-"
 
-        # 5. 상품명 추출
+        # 6. 상품명 추출
         product_name_xpath_id = "//*[@id='pdp_product_name']"
         product_name_xpath_fallback = "//h1[contains(@class, 'product')] | //div[contains(@class, 'product-name')] | //h1"
 
@@ -310,7 +348,7 @@ def crawl_product_details(url):
         )
         result['product_name'] = product_name if product_name else "-"
 
-        # 6. 브랜드명 추출
+        # 7. 브랜드명 추출
         brand_xpath_absolute = "/html/body/main/div/div[2]/div[1]/div/div/a/div/div/h3/span"
         brand_xpath_relative = "//main//h3//span | //a[contains(@href, 'brand')]//span | //div[contains(@class, 'brand')]//span"
 
@@ -330,7 +368,7 @@ def crawl_product_details(url):
         )
         result['brand_name'] = brand_name if brand_name else "-"
 
-        # 7. 가격 추출
+        # 8. 가격 추출
         price_xpath_id = "//*[@id='pdp_product_price']"
         price_xpath_fallback = "//div[contains(@class, 'price')]//span | //span[contains(@class, 'price')] | //div[contains(text(), ',') and contains(text(), '원')]"
 
@@ -352,11 +390,11 @@ def crawl_product_details(url):
 
         result['price'] = price
 
-        # 8. 별점 추출
+        # 9. 별점 추출
         starpoint = extract_starpoint(driver)
         result['star_point'] = starpoint
 
-        # 9. AI 리뷰
+        # 10. AI 리뷰
         result['AI_review'] = None
 
         return result
@@ -365,7 +403,9 @@ def crawl_product_details(url):
         print(f"크롤링 중 오류 발생: {str(e)}")
         import traceback
         traceback.print_exc()
-        return {"shoppingmall_name": "29CM", "product_url": url, "category": "-", "product_img_url": "-", "product_name": "-", "brand_name": "-", "price": "-", "star_point": None, "AI_review": None}
+        # 예외 발생 시에도 product_num 추출 시도
+        product_num = extract_product_num(url)
+        return {"shoppingmall_name": "29CM", "product_url": url, "product_num": product_num, "category": "-", "product_img_url": "-", "product_name": "-", "brand_name": "-", "price": "-", "star_point": None, "AI_review": None}
 
     finally:
         driver.quit()
