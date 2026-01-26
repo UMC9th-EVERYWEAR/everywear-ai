@@ -87,6 +87,7 @@ class CrawlResponse(BaseModel):
     price: str
     star_point: Optional[float] = None
     AI_review: Optional[str] = None
+    product_num: Optional[int] = None
 
 # ========================================
 # 헬스체크
@@ -131,7 +132,8 @@ async def crawl_musinsa(request: CrawlRequest):
             brand_name=result.get('brand_name', '-'),
             price=result.get('price', '-'),
             star_point=star_point,
-            AI_review=result.get('AI_review')
+            AI_review=result.get('AI_review'),
+            product_num=result.get('product_num')
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"크롤링 중 오류 발생: {str(e)}")
@@ -150,7 +152,8 @@ async def crawl_zigzag(request: CrawlRequest):
             brand_name=result.get('brand_name', '-'),
             price=result.get('price', '-'),
             star_point=star_point,
-            AI_review=result.get('AI_review')
+            AI_review=result.get('AI_review'),
+            product_num=result.get('product_num')
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"크롤링 중 오류 발생: {str(e)}")
@@ -169,7 +172,8 @@ async def crawl_29cm(request: CrawlRequest):
             brand_name=result.get('brand_name', '-'),
             price=result.get('price', '-'),
             star_point=star_point,
-            AI_review=result.get('AI_review')
+            AI_review=result.get('AI_review'),
+            product_num=result.get('product_num')
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"크롤링 중 오류 발생: {str(e)}")
@@ -188,7 +192,8 @@ async def crawl_wconcept(request: CrawlRequest):
             brand_name=result.get('brand_name', '-'),
             price=result.get('price', '-'),
             star_point=star_point,
-            AI_review=result.get('AI_review')
+            AI_review=result.get('AI_review'),
+            product_num=result.get('product_num')
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"크롤링 중 오류 발생: {str(e)}")
