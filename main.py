@@ -273,7 +273,7 @@ async def crawl_wconcept_reviews_endpoint(request: ReviewCrawlRequest):
 # 통합 리뷰 크롤링 API (신규 - 백그라운드)
 # ========================================
 
-@app.post("/crawler/review/crawl")
+@app.post("/review/crawl")
 async def crawl_reviews_unified(request: UnifiedReviewCrawlRequest, background_tasks: BackgroundTasks):
     """
     통합 리뷰 크롤링 API
@@ -367,105 +367,42 @@ async def _crawl_and_save_reviews(product_id: int, url: str, shoppingmall: str, 
 
 def _save_review_to_db(cursor, product_id: int, review: dict, shoppingmall: str):
     """
-    쇼핑몰별 리뷰 데이터를 통일된 형식으로 DB에 저장
+    통일된 리뷰 데이터를 DB에 저장
+    Review 엔티티 구조에 맞춰 7개 필드 저장
     """
     try:
-        if shoppingmall == "무신사":
-            review_sql = """
-                INSERT INTO review (
-                    product_id, star_point, review_contact, review_date,
-                    user_height, user_weight, option_text, created_at, updated_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
-            """
-            cursor.execute(review_sql, (
-                product_id,
-                float(review.get('score', 0)),
-                review.get('content', ''),
-                review.get('date', ''),
-                review.get('user_info', {}).get('height', ''),
-                review.get('user_info', {}).get('weight', ''),
-                review.get('option', '')
-            ))
-            review_id = cursor.lastrowid
-            
-            # 이미지 저장
-            for img_url in review.get('images', []):
-                cursor.execute(
-                    "INSERT INTO reviewPhoto (review_id, photo_url) VALUES (%s, %s)",
-                    (review_id, img_url)
-                )
+        import json
         
-        elif shoppingmall == "지그재그":
-            review_sql = """
-                INSERT INTO review (
-                    product_id, star_point, review_contact, review_date,
-                    user_height, user_weight, option_text, created_at, updated_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
-            """
-            cursor.execute(review_sql, (
-                product_id,
-                float(review.get('star_rating', 0)),
-                review.get('review_content', ''),
-                review.get('review_date', ''),
-                '',
-                '',
-                review.get('satisfaction', {}).get('option', '')
-            ))
-            review_id = cursor.lastrowid
-            
-            for img_url in review.get('review_images', []):
-                cursor.execute(
-                    "INSERT INTO reviewPhoto (review_id, photo_url) VALUES (%s, %s)",
-                    (review_id, img_url)
-                )
+        # 통일된 필드로 데이터 접근
+        rating = review.get('rating', 5)
+        content = review.get('content', '')
+        review_date = review.get('review_date', '')
+        images_list = review.get('images', [])
+        user_height = review.get('user_height')
+        user_weight = review.get('user_weight')
+        option_text = review.get('option_text', '')
         
-        elif shoppingmall == "29CM":
-            review_sql = """
-                INSERT INTO review (
-                    product_id, star_point, review_contact, review_date,
-                    user_height, user_weight, option_text, created_at, updated_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
-            """
-            cursor.execute(review_sql, (
-                product_id,
-                float(review.get('rating', 0)),
-                review.get('content', ''),
-                review.get('date', ''),
-                review.get('user_info', {}).get('height', ''),
-                review.get('user_info', {}).get('weight', ''),
-                review.get('option', '')
-            ))
-            review_id = cursor.lastrowid
-            
-            for img_url in review.get('images', []):
-                cursor.execute(
-                    "INSERT INTO reviewPhoto (review_id, photo_url) VALUES (%s, %s)",
-                    (review_id, img_url)
-                )
+        # images를 JSON 문자열로 변환
+        images_json = json.dumps(images_list, ensure_ascii=False)
         
-        elif shoppingmall == "W컨셉":
-            review_sql = """
-                INSERT INTO review (
-                    product_id, star_point, review_contact, review_date,
-                    user_height, user_weight, option_text, created_at, updated_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
-            """
-            cursor.execute(review_sql, (
-                product_id,
-                float(review.get('score', 0)),
-                review.get('content', ''),
-                review.get('date', ''),
-                '',
-                '',
-                review.get('option', '')
-            ))
-            review_id = cursor.lastrowid
-            
-            for img_url in review.get('images', []):
-                cursor.execute(
-                    "INSERT INTO reviewPhoto (review_id, photo_url) VALUES (%s, %s)",
-                    (review_id, img_url)
-                )
+        # Review 테이블에 저장
+        review_sql = """
+            INSERT INTO review (
+                product_id, rating, content, review_date,
+                images, user_height, user_weight, option_text,
+                created_at, updated_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+        """
+        cursor.execute(review_sql, (
+            product_id,
+            rating,
+            content,
+            review_date,
+            images_json,
+            user_height,
+            user_weight,
+            option_text
+        ))
                 
     except Exception as e:
         print(f"[ERROR] 리뷰 저장 실패: {str(e)}")

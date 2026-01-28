@@ -17,11 +17,15 @@ def get_db_connection():
     """
     MySQL DB 연결 생성
     환경변수에서 DB 접속 정보 가져오기
+    
+    로컬 개발: 개별 환경변수 사용 (DB_HOST, DB_USER, DB_PASSWORD, DB_NAME)
+    서버 환경: DATABASE_URL 사용 (ECS Task Definition에서 설정)
     """
     database_url = os.getenv('DATABASE_URL', '')
     
     if database_url:
-        # URL 파싱: mysql://user:password@host:port/database?charset=utf8mb4
+        # 서버 환경: DATABASE_URL 파싱
+        # 형식: mysql://user:password@host:port/database?charset=utf8mb4
         parsed = urlparse(database_url)
         
         host = parsed.hostname or 'localhost'
@@ -35,12 +39,13 @@ def get_db_connection():
         query_params = parse_qs(parsed.query)
         charset = query_params.get('charset', ['utf8mb4'])[0]
     else:
-        # DATABASE_URL이 없으면 개별 환경변수 사용 (로컬 개발용)
+        # 로컬 개발: 개별 환경변수 사용
+        # .env 파일 또는 시스템 환경변수에서 로드
         host = os.getenv('DB_HOST', 'localhost')
         port = int(os.getenv('DB_PORT', '3306'))
         database = os.getenv('DB_NAME', 'everywear')
         user = os.getenv('DB_USER', 'root')
-        password = os.getenv('DB_PASSWORD', '')
+        password = os.getenv('DB_PASSWORD', 'ys0720ys')
         charset = 'utf8mb4'
     
     connection = pymysql.connect(
