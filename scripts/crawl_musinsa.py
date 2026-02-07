@@ -130,8 +130,8 @@ def crawl_product_details(url):
             
             if category_names:
                 # 우선순위에 따라 카테고리 선택
-                # 우선순위: 아우터 > 바지 > 상의 > 원피스/스커트 > 기타
-                priority_categories = ["아우터", "바지", "상의", "원피스/스커트"]
+                # 우선순위: 아우터 > 바지 > 하의 > 상의 > 원피스/스커트 > 기타
+                priority_categories = ["아우터", "바지", "하의", "상의", "원피스/스커트"]
                 
                 selected_category_name = None
                 for priority_cat in priority_categories:
@@ -147,6 +147,8 @@ def crawl_product_details(url):
                 if selected_category_name == "아우터":
                     category = "아우터"
                 elif selected_category_name == "바지":
+                    category = "하의"
+                elif selected_category_name == "하의":
                     category = "하의"
                 elif selected_category_name == "상의":
                     category = "상의"
