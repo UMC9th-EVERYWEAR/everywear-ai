@@ -296,6 +296,7 @@ async def crawl_reviews_unified(request: UnifiedReviewCrawlRequest, background_t
 async def _crawl_and_save_reviews(product_id: int, url: str, shoppingmall: str, count: int):
     """
     백그라운드에서 리뷰 크롤링 및 DB 저장
+    타임아웃: 3분
     """
     connection = get_db_connection()
     
@@ -309,26 +310,43 @@ async def _crawl_and_save_reviews(product_id: int, url: str, shoppingmall: str, 
             connection.commit()
             print(f"[INFO] 리뷰 크롤링 시작: product_id={product_id}, shoppingmall={shoppingmall}")
             
-            # 2. 쇼핑몰별 크롤링
-            reviews = []
-            if shoppingmall == "무신사":
-                goods_no = extract_product_no_from_url(url)
-                if goods_no:
-                    reviews = await asyncio.to_thread(collect_reviews, goods_no, count)
-                else:
-                    raise ValueError("무신사 상품번호 추출 실패")
+            # 2. 쇼핑몰별 크롤링 (타임아웃 3분)
+            try:
+                reviews = []
+                if shoppingmall == "무신사":
+                    goods_no = extract_product_no_from_url(url)
+                    if goods_no:
+                        reviews = await asyncio.wait_for(
+                            asyncio.to_thread(collect_reviews, goods_no, count),
+                            timeout=180.0  # 3분 타임아웃
+                        )
+                    else:
+                        raise ValueError("무신사 상품번호 추출 실패")
+                        
+                elif shoppingmall == "지그재그":
+                    reviews = await asyncio.wait_for(
+                        asyncio.to_thread(crawl_zigzag_reviews, url, count),
+                        timeout=180.0
+                    )
                     
-            elif shoppingmall == "지그재그":
-                reviews = await asyncio.to_thread(crawl_zigzag_reviews, url, count)
+                elif shoppingmall == "29CM":
+                    reviews = await asyncio.wait_for(
+                        asyncio.to_thread(collect_29cm_reviews, url, count),
+                        timeout=180.0
+                    )
+                    
+                elif shoppingmall == "W컨셉":
+                    reviews = await asyncio.wait_for(
+                        asyncio.to_thread(collect_wconcept_reviews, url, count),
+                        timeout=180.0
+                    )
+                    
+                else:
+                    raise ValueError(f"지원하지 않는 쇼핑몰: {shoppingmall}")
                 
-            elif shoppingmall == "29CM":
-                reviews = await asyncio.to_thread(collect_29cm_reviews, url, count)
-                
-            elif shoppingmall == "W컨셉":
-                reviews = await asyncio.to_thread(collect_wconcept_reviews, url, count)
-                
-            else:
-                raise ValueError(f"지원하지 않는 쇼핑몰: {shoppingmall}")
+            except asyncio.TimeoutError:
+                print(f"⏱️ 크롤링 타임아웃 (3분 초과): product_id={product_id}")
+                raise Exception("크롤링 시간이 3분을 초과했습니다")
             
             print(f"[INFO] 크롤링 완료: {len(reviews)}개 리뷰 수집")
             
