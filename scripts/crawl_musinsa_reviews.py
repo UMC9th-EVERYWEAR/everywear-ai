@@ -77,6 +77,9 @@ def collect_reviews(goods_no: str, target_total: int = 20) -> List[Dict]:
         time.sleep(1.5)
 
         scroll_attempts = 0
+        no_new_review_count = 0
+        last_count = 0
+        
         while len(collected_reviews) < target_total and scroll_attempts < 50:
             # 1. 모든 '더보기' 버튼 일괄 클릭 (JS) - 숨겨진 전체 내용 로드
             driver.execute_script("""
@@ -147,6 +150,18 @@ def collect_reviews(goods_no: str, target_total: int = 20) -> List[Dict]:
                 except: continue
 
             #print(f"   -> 현재 {len(collected_reviews)}개 확보 중... (신규: {new_found_this_round})")
+            
+            # 조기 종료 로직: 5번 연속 새 리뷰 없고, 최소 10번 스크롤 시도했으면 종료
+            current_count = len(collected_reviews)
+            if current_count == last_count:
+                no_new_review_count += 1
+                if no_new_review_count >= 5 and scroll_attempts >= 10:
+                    print(f"[정보] 더 이상 리뷰 없음. 총 {current_count}개 수집 완료")
+                    break
+            else:
+                no_new_review_count = 0
+            
+            last_count = current_count
 
             # 2. 정체 현상 해결 (스크롤 전략)
             if new_found_this_round == 0:
