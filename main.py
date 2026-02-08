@@ -296,67 +296,99 @@ async def crawl_reviews_unified(request: UnifiedReviewCrawlRequest, background_t
 async def _crawl_and_save_reviews(product_id: int, url: str, shoppingmall: str, count: int):
     """
     백그라운드에서 리뷰 크롤링 및 DB 저장
-    타임아웃: 3분
+    DB 커넥션은 필요할 때만 열고 닫음
     """
-    connection = get_db_connection()
     
+    # 1. 상태 업데이트 (PROCESSING) - 커넥션 열고 즉시 닫음
+    connection = get_db_connection()
     try:
         with connection.cursor() as cursor:
-            # 1. Product 상태 업데이트 (PROCESSING)
             cursor.execute(
                 "UPDATE product SET review_crawl_status='PROCESSING' WHERE product_id=%s",
                 (product_id,)
             )
             connection.commit()
             print(f"[INFO] 리뷰 크롤링 시작: product_id={product_id}, shoppingmall={shoppingmall}")
-            
-            # 2. 쇼핑몰별 크롤링 (타임아웃 3분)
-            try:
-                reviews = []
-                if shoppingmall == "무신사":
-                    goods_no = extract_product_no_from_url(url)
-                    if goods_no:
-                        reviews = await asyncio.wait_for(
-                            asyncio.to_thread(collect_reviews, goods_no, count),
-                            timeout=180.0  # 3분 타임아웃
-                        )
-                    else:
-                        raise ValueError("무신사 상품번호 추출 실패")
-                        
-                elif shoppingmall == "지그재그":
-                    reviews = await asyncio.wait_for(
-                        asyncio.to_thread(crawl_zigzag_reviews, url, count),
-                        timeout=180.0
-                    )
-                    
-                elif shoppingmall == "29CM":
-                    reviews = await asyncio.wait_for(
-                        asyncio.to_thread(collect_29cm_reviews, url, count),
-                        timeout=180.0
-                    )
-                    
-                elif shoppingmall == "W컨셉":
-                    reviews = await asyncio.wait_for(
-                        asyncio.to_thread(collect_wconcept_reviews, url, count),
-                        timeout=180.0
-                    )
-                    
-                else:
-                    raise ValueError(f"지원하지 않는 쇼핑몰: {shoppingmall}")
+    finally:
+        connection.close()  # 즉시 닫음
+    
+    # 2. 크롤링 (DB 커넥션 없이 진행)
+    try:
+        reviews = []
+        if shoppingmall == "무신사":
+            goods_no = extract_product_no_from_url(url)
+            if goods_no:
+                reviews = await asyncio.wait_for(
+                    asyncio.to_thread(collect_reviews, goods_no, count),
+                    timeout=180.0
+                )
+            else:
+                raise ValueError("무신사 상품번호 추출 실패")
                 
-            except asyncio.TimeoutError:
-                print(f"⏱️ 크롤링 타임아웃 (3분 초과): product_id={product_id}")
-                raise Exception("크롤링 시간이 3분을 초과했습니다")
+        elif shoppingmall == "지그재그":
+            reviews = await asyncio.wait_for(
+                asyncio.to_thread(crawl_zigzag_reviews, url, count),
+                timeout=180.0
+            )
             
-            print(f"[INFO] 크롤링 완료: {len(reviews)}개 리뷰 수집")
+        elif shoppingmall == "29CM":
+            reviews = await asyncio.wait_for(
+                asyncio.to_thread(collect_29cm_reviews, url, count),
+                timeout=180.0
+            )
             
-            # 3. DB 저장
+        elif shoppingmall == "W컨셉":
+            reviews = await asyncio.wait_for(
+                asyncio.to_thread(collect_wconcept_reviews, url, count),
+                timeout=180.0
+            )
+            
+        else:
+            raise ValueError(f"지원하지 않는 쇼핑몰: {shoppingmall}")
+        
+    except asyncio.TimeoutError:
+        print(f"⏱️ 크롤링 타임아웃 (3분 초과): product_id={product_id}")
+        # 타임아웃 시 FAILED로 업데이트
+        connection = get_db_connection()
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE product SET review_crawl_status='FAILED' WHERE product_id=%s",
+                    (product_id,)
+                )
+                connection.commit()
+        finally:
+            connection.close()
+        return
+        
+    except Exception as crawl_error:
+        print(f"❌ 크롤링 중 오류: product_id={product_id}, error={str(crawl_error)}")
+        # 크롤링 실패 시 FAILED로 업데이트
+        connection = get_db_connection()
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE product SET review_crawl_status='FAILED' WHERE product_id=%s",
+                    (product_id,)
+                )
+                connection.commit()
+        finally:
+            connection.close()
+        return
+    
+    print(f"[INFO] 크롤링 완료: {len(reviews)}개 리뷰 수집")
+    
+    # 3. DB 저장 - 새로운 커넥션으로 저장
+    connection = get_db_connection()
+    try:
+        with connection.cursor() as cursor:
+            # 리뷰 저장
             for review in reviews:
                 _save_review_to_db(cursor, product_id, review, shoppingmall)
             
             connection.commit()
             
-            # 4. Product 상태 업데이트 (COMPLETED)
+            # 상태 COMPLETED로 업데이트
             cursor.execute(
                 "UPDATE product SET review_crawl_status='COMPLETED' WHERE product_id=%s",
                 (product_id,)
@@ -365,11 +397,12 @@ async def _crawl_and_save_reviews(product_id: int, url: str, shoppingmall: str, 
             
             print(f"✅ 리뷰 크롤링 완료: product_id={product_id}, count={len(reviews)}")
             
-    except Exception as e:
-        print(f"❌ 리뷰 크롤링 실패: product_id={product_id}, error={str(e)}")
+    except Exception as db_error:
+        print(f"❌ DB 저장 실패: product_id={product_id}, error={str(db_error)}")
         import traceback
         traceback.print_exc()
         
+        # DB 저장 실패 시 FAILED로 업데이트
         try:
             with connection.cursor() as cursor:
                 cursor.execute(
@@ -377,8 +410,8 @@ async def _crawl_and_save_reviews(product_id: int, url: str, shoppingmall: str, 
                     (product_id,)
                 )
                 connection.commit()
-        except Exception as db_error:
-            print(f"❌ 상태 업데이트 실패: {str(db_error)}")
+        except Exception as update_error:
+            print(f"❌ 상태 업데이트 실패: {str(update_error)}")
             
     finally:
         connection.close()
