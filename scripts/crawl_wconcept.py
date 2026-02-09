@@ -104,16 +104,19 @@ def crawl_product_details(url):
         # 추가 대기 (동적 콘텐츠 로딩)
         time.sleep(2)
 
+        # 리다이렉트 후 최종 URL 사용
+        final_url = driver.current_url
+
         result = {}
 
         # 1. 쇼핑몰 이름
         result['shoppingmall_name'] = "W컨셉"
 
-        # 2. 상품 URL
-        result['product_url'] = url
+        # 2. 상품 URL (리다이렉트된 최종 URL 저장)
+        result['product_url'] = final_url
 
         # 3. 상품 번호 추출
-        product_num = extract_product_num(url)
+        product_num = extract_product_num(final_url)
         result['product_num'] = product_num
 
         # 4. 카테고리 추출
