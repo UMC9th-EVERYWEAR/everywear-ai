@@ -47,7 +47,7 @@ def get_db_connection():
         user = os.getenv('DB_USER', 'root')
         password = os.getenv('DB_PASSWORD', 'ys0720ys')
         charset = 'utf8mb4'
-    
+
     connection = pymysql.connect(
         host=host,
         port=port,
