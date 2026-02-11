@@ -110,10 +110,11 @@ def crawl_product_details(url):
         result['shoppingmall_name'] = "W컨셉"
 
         # 2. 상품 URL
-        result['product_url'] = url
+        final_url = driver.current_url
+        result['product_url'] = final_url
 
         # 3. 상품 번호 추출
-        product_num = extract_product_num(url)
+        product_num = extract_product_num(final_url)
         result['product_num'] = product_num
 
         # 4. 카테고리 추출
@@ -255,9 +256,13 @@ def crawl_product_details(url):
         print(f"크롤링 중 오류 발생: {str(e)}")
         import traceback
         traceback.print_exc()
-        # 예외 발생 시에도 product_num 추출 시도
-        product_num = extract_product_num(url)
-        return {"shoppingmall_name": "W컨셉", "product_url": url, "product_num": product_num, "category": "-", "product_img_url": "-", "product_name": "-", "brand_name": "-", "price": "-", "star_point": None, "AI_review": None}
+        # 예외 발생 시 리다이렉트된 URL 우선 사용, 없으면 요청 URL 사용
+        try:
+            fallback_url = driver.current_url
+        except Exception:
+            fallback_url = url
+        product_num = extract_product_num(fallback_url)
+        return {"shoppingmall_name": "W컨셉", "product_url": fallback_url, "product_num": product_num, "category": "-", "product_img_url": "-", "product_name": "-", "brand_name": "-", "price": "-", "star_point": None, "AI_review": None}
 
     finally:
         driver.quit()
