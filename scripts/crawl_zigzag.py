@@ -162,14 +162,17 @@ def crawl_product_details(url):
         )
         result['brand_name'] = brand_name if brand_name else "-"
 
-        # 7. 가격 추출 (두 가지 케이스)
+        # 7. 가격 추출
         price_xpath_case1 = "//*[@id='__next']/div[1]/div[1]/div/div[5]/div/div[1]/div[1]/div[2]/div[1]"
         price_xpath_case2 = "//*[@id='__next']/div[1]/div[1]/div/div[6]/div/div[1]/div[1]/div[2]/div[1]"
         price_xpath_relative = "//div[contains(@class, 'price')]//div[contains(text(), ',') or contains(text(), '원')] | //div[contains(@class, 'Price')]//div[1]"
+        price_xpath_case3 = "//*[@id='__next']/div[1]/div[1]/div/div[4]/div/div[1]/div/div[1]/div[2]"
+        price_xpath_case4 = "//*[@id='__next']/div[1]/div[1]/div/div[5]/div/div[1]/div/div[1]/div[2]"
+        price_xpath_case5 = "//*[@id='__next']/div[1]/div[1]/div/div[4]/div/div[1]/div/div[2]/div[1]"
 
         price = extract_by_xpath_with_fallback(
             driver,
-            [price_xpath_case1, price_xpath_case2, price_xpath_relative]
+            [price_xpath_case1, price_xpath_case2, price_xpath_relative, price_xpath_case3, price_xpath_case4, price_xpath_case5]
         )
 
         if price and price != "-":
