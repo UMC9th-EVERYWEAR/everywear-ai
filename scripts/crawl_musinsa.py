@@ -173,8 +173,11 @@ def crawl_product_details(url):
         result['product_name'] = product_name
         
         # 7. 브랜드명 추출
-        brand_xpath = "//*[@id='root']/div[1]/div[1]/div[5]/div[2]/div/div[1]/div/span"
-        brand_name = extract_text_by_xpath(driver, brand_xpath)
+        brand_xpath_1 = "//*[@id='root']/div[1]/div[1]/div[5]/div[2]/div/div[1]/div/span"
+        brand_xpath_2 = "//*[@id='root']/div[1]/div[1]/div[6]/div[1]/div[1]/div/div[1]/a/div[2]/span[1]"
+        brand_name = extract_text_by_xpath(driver, brand_xpath_1)
+        if not brand_name or brand_name == "-":
+            brand_name = extract_text_by_xpath(driver, brand_xpath_2)
         result['brand_name'] = brand_name if brand_name else "-"
         
         # 8. 가격 추출
