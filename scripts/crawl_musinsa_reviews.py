@@ -62,12 +62,11 @@ def parse_height_weight(text: str) -> tuple:
 
 def collect_reviews(goods_no: str, target_total: int = 20) -> List[Dict]:
     driver = setup_driver()
-    # 도움순(추천순) 정렬 URL로 바로 진입
     review_url = f"https://www.musinsa.com/review/goods/{goods_no}?sort=up_cnt_desc"
     collected_reviews = {}
+    collected_contents = set()  # content 기반 중복 체크 추가
     
     try:
-        #print(f"[정보] 무신사 상품번호 {goods_no} 리뷰 수집 시작...")
         driver.get(review_url)
         try:
             WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, "div.gtm-impression-content")))
@@ -77,8 +76,10 @@ def collect_reviews(goods_no: str, target_total: int = 20) -> List[Dict]:
         time.sleep(1.5)
 
         scroll_attempts = 0
+        no_new_review_count = 0
+        last_count = 0
+        
         while len(collected_reviews) < target_total and scroll_attempts < 50:
-            # 1. 모든 '더보기' 버튼 일괄 클릭 (JS) - 숨겨진 전체 내용 로드
             driver.execute_script("""
                 document.querySelectorAll("span[class*='MoreButton']").forEach(btn => {
                     if (btn.innerText.includes('더보기')) {
@@ -97,7 +98,6 @@ def collect_reviews(goods_no: str, target_total: int = 20) -> List[Dict]:
                     if not review_id or review_id in collected_reviews:
                         continue
 
-                    # 내용 추출: '더보기' 버튼을 제외한 순수 전체 텍스트 수집
                     content_element = item.find_element(By.CSS_SELECTOR, "div[class*='ExpandableContent'] span[class*='text-black']")
                     full_content = driver.execute_script("""
                         var el = arguments[0];
@@ -106,6 +106,10 @@ def collect_reviews(goods_no: str, target_total: int = 20) -> List[Dict]:
                         if(moreBtn) moreBtn.remove();
                         return clone.textContent.trim();
                     """, content_element)
+                    
+                    # content 기반 중복 체크 추가
+                    if full_content in collected_contents:
+                        continue
 
                     # 별점/날짜
                     try:
@@ -132,7 +136,6 @@ def collect_reviews(goods_no: str, target_total: int = 20) -> List[Dict]:
                             if len(parts) >= 2: h, _ = parse_height_weight(parts[1])
                             if len(parts) >= 3: _, w = parse_height_weight(parts[2])
 
-                    # main.py UnifiedReviewItem 모델에 맞춘 데이터 구성
                     collected_reviews[review_id] = {
                         'rating': rating,
                         'content': full_content,
@@ -142,19 +145,28 @@ def collect_reviews(goods_no: str, target_total: int = 20) -> List[Dict]:
                         'user_weight': w,
                         'option_text': opt_text
                     }
+                    collected_contents.add(full_content)  # content 추가
                     new_found_this_round += 1
                     if len(collected_reviews) >= target_total: break
                 except: continue
 
-            #print(f"   -> 현재 {len(collected_reviews)}개 확보 중... (신규: {new_found_this_round})")
+            # 조기 종료 로직
+            current_count = len(collected_reviews)
+            if current_count == last_count:
+                no_new_review_count += 1
+                if no_new_review_count >= 5 and scroll_attempts >= 10:
+                    print(f"[정보] 더 이상 리뷰 없음. 총 {current_count}개 수집 완료")
+                    break
+            else:
+                no_new_review_count = 0
+            
+            last_count = current_count
 
-            # 2. 정체 현상 해결 (스크롤 전략)
+            # 스크롤 전략
             if new_found_this_round == 0:
-                # 새로운 리뷰가 안 나오면 끝까지 강제 점프
                 driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                 time.sleep(1.5)
             else:
-                # 자연스러운 로딩을 위해 마지막 아이템으로 스크롤
                 try:
                     driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", items[-1])
                     time.sleep(1.0)

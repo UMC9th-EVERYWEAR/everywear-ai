@@ -69,9 +69,11 @@ def crawl_zigzag_reviews(product_url: str, max_reviews: int = 20) -> List[Dict]:
         time.sleep(2.0)
 
         scroll_attempts = 0
+        no_new_review_count = 0
+        last_count = 0
+        
         while len(collected_reviews) < max_reviews and scroll_attempts < 50:
             # 1. 화면 내의 모든 '더보기' 버튼 일괄 클릭 (JS)
-            # 지그재그 더보기 버튼 클래스인 p.zds4_s96ru82b 타겟팅
             driver.execute_script("""
                 document.querySelectorAll("p.zds4_s96ru82b").forEach(btn => {
                     if (btn.innerText.includes('더보기')) {
@@ -91,7 +93,7 @@ def crawl_zigzag_reviews(product_url: str, max_reviews: int = 20) -> List[Dict]:
                     if not review_id or review_id in collected_reviews:
                         continue
 
-                    # [핵심] 내용 추출: '더보기' 버튼 요소를 제거한 순수 전체 텍스트 수집
+                    # 내용 추출
                     content_element = item.find_element(By.CSS_SELECTOR, "span.zds4_s96ru81z")
                     full_content = driver.execute_script("""
                         var el = arguments[0];
@@ -101,7 +103,7 @@ def crawl_zigzag_reviews(product_url: str, max_reviews: int = 20) -> List[Dict]:
                         return clone.textContent.trim();
                     """, content_element)
 
-                    # 별점 (SVG 개수)
+                    # 별점
                     try:
                         stars = item.find_elements(By.CSS_SELECTOR, "svg[data-zds-icon='IconStarSolid']")
                         rating = len(stars) if stars else 5
@@ -116,9 +118,8 @@ def crawl_zigzag_reviews(product_url: str, max_reviews: int = 20) -> List[Dict]:
                     # 이미지
                     images = [img.get_dom_attribute("src") for img in item.find_elements(By.CSS_SELECTOR, "img[src*='zigzag.kr']")]
 
-                    # 옵션/체형 정보 파싱
+                    # 옵션/체형 정보
                     opt_text, h, w = "", None, None
-                    # 라벨(quaternary)과 값(tertiary) 스타일을 구분하여 매칭
                     sections = item.find_elements(By.CSS_SELECTOR, "div.css-1y13n9")
                     for sec in sections:
                         try:
@@ -131,7 +132,6 @@ def crawl_zigzag_reviews(product_url: str, max_reviews: int = 20) -> List[Dict]:
                                 h, w = parse_height_weight(value)
                         except: continue
 
-                    # main.py UnifiedReviewItem 모델에 맞춘 7개 필드
                     collected_reviews[review_id] = {
                         'rating': rating,
                         'content': full_content,
@@ -147,13 +147,24 @@ def crawl_zigzag_reviews(product_url: str, max_reviews: int = 20) -> List[Dict]:
 
             print(f"   -> 지그재그 현재 {len(collected_reviews)}개 확보 중... (신규: {new_found_this_round})")
 
-            # 3. 13개 정체 구간 돌파 전략 (바닥 강제 스크롤)
+            # 조기 종료 로직
+            current_count = len(collected_reviews)
+            if current_count == last_count:
+                no_new_review_count += 1
+                if no_new_review_count >= 5 and scroll_attempts >= 10:
+                    print(f"[정보] 더 이상 리뷰 없음. 총 {current_count}개 수집 완료")
+                    break
+            else:
+                no_new_review_count = 0
+            
+            last_count = current_count
+
+            # 3. 스크롤 전략
             if new_found_this_round == 0:
                 driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(1.5) # 로딩 대기
+                time.sleep(1.5)
             else:
                 try:
-                    # 마지막 요소로 이동하여 다음 데이터 트리거
                     driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", items[-1])
                     time.sleep(0.8)
                 except:
