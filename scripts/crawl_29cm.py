@@ -242,6 +242,8 @@ def crawl_product_details(url):
             # 기본 매핑
             if category == "바지":
                 final_category = "하의"
+            elif category == "아우터":
+                final_category = "아우터"
             elif category == "점프수트":
                 final_category = "하의"
             elif category == "셋업":
