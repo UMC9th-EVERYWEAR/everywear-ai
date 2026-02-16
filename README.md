@@ -3,7 +3,6 @@ EveryWear AI는 외부 쇼핑몰(무신사, 지그재그, W컨셉, 29CM)의 �
 
 
 ## 💻 Tech Stack
----
 - **Framework/Language**: FastAPI, Python 3.x
 - **Server**: Uvicorn
 - **Crawling**: Selenium (Chrome/Chromium), webdriver-manager, requests
@@ -14,7 +13,6 @@ EveryWear AI는 외부 쇼핑몰(무신사, 지그재그, W컨셉, 29CM)의 �
 
 
 ## **📂 Project Structure**
----
 ```
 everywear-ai/
 ├── .github/                       # Issue/PR 템플릿 및 CI/CD 설정
@@ -32,12 +30,10 @@ everywear-ai/
 ```
 
 ## **🛠️ Architecture**
----
 <img width="1005" height="541" alt="스크린샷 2026-02-12 오후 7 13 10" src="https://github.com/user-attachments/assets/7795c4ee-5704-4878-a025-5a8d9c837b2c" />
 
 
 ## **🚀** Getting Started
----
 1. 가상환경 생성 및 활성화
 ```bash
 # 가상환경 생성
@@ -67,7 +63,6 @@ python main.py
 
 
 ## **📝 Commit Convention**
----
 | type | 의미 | 예시 |
 | --- | --- | --- |
 | ✨ **feat** | 새로운 기능 | 로그인 API 구현 |
