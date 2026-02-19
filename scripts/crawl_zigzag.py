@@ -7,7 +7,6 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
-from selenium.webdriver.chrome.service import Service
 import time
 import re
 import requests
@@ -34,7 +33,7 @@ def extract_by_xpath_with_fallback(driver, xpath_list, wait_time=10, is_attribut
                 EC.presence_of_element_located((By.XPATH, xpath))
             )
             if is_attribute:
-                value = element.get_attribute(attribute_name)
+                value = element.get_dom_attribute(attribute_name)
             else:
                 value = element.text.strip()
 
@@ -52,7 +51,8 @@ def extract_by_xpath(driver, xpath, wait_time=10, is_attribute=False, attribute_
             EC.presence_of_element_located((By.XPATH, xpath))
         )
         if is_attribute:
-            return element.get_attribute(attribute_name)
+            value = element.get_dom_attribute(attribute_name)
+            return value if value is not None else "-"
         else:
             return element.text.strip()
     except (TimeoutException, NoSuchElementException):
@@ -97,7 +97,7 @@ def crawl_product_details(url):
     driver = setup_driver()
 
     try:
-        print(f"페이지 로딩 중: {url}")
+        #print(f"페이지 로딩 중: {url}")
         driver.get(url)
 
         # 페이지 로딩 대기 (JavaScript 렌더링 고려)
