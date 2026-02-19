@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List, Dict
+from contextlib import asynccontextmanager
 import sys
 import os
 import asyncio
@@ -45,10 +46,21 @@ except ImportError as e:
     print(f"DB 핸들러 import 실패: {e}", file=sys.stderr)
     raise
 
+# 세미포어 (상품 크롤링 동시 실행 제한)
+MAX_CONCURRENT_CRAWLS = 2
+crawl_semaphore: Optional[asyncio.Semaphore] = None
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    global crawl_semaphore
+    crawl_semaphore = asyncio.Semaphore(MAX_CONCURRENT_CRAWLS)
+    yield
+
 app = FastAPI(
     title="EveryWear AI API",
     version="1.0.0",
-    root_path="/crawler"
+    root_path="/crawler",
+    lifespan=lifespan,
 )
 
 # CORS 설정
@@ -121,7 +133,8 @@ def _normalize_star_point(result: dict) -> Optional[float]:
 @app.post("/crawl/musinsa", response_model=CrawlResponse)
 async def crawl_musinsa(request: CrawlRequest):
     try:
-        result = await asyncio.to_thread(crawl_musinsa_product, request.product_url)
+        async with crawl_semaphore:
+            result = await asyncio.to_thread(crawl_musinsa_product, request.product_url)
         star_point = _normalize_star_point(result)
         return CrawlResponse(
             shoppingmall_name=result.get('shoppingmall_name', '무신사'),
@@ -141,7 +154,8 @@ async def crawl_musinsa(request: CrawlRequest):
 @app.post("/crawl/zigzag", response_model=CrawlResponse)
 async def crawl_zigzag(request: CrawlRequest):
     try:
-        result = await asyncio.to_thread(crawl_zigzag_product, request.product_url)
+        async with crawl_semaphore:
+            result = await asyncio.to_thread(crawl_zigzag_product, request.product_url)
         star_point = _normalize_star_point(result)
         return CrawlResponse(
             shoppingmall_name=result.get('shoppingmall_name', '지그재그'),
@@ -161,7 +175,8 @@ async def crawl_zigzag(request: CrawlRequest):
 @app.post("/crawl/29cm", response_model=CrawlResponse)
 async def crawl_29cm(request: CrawlRequest):
     try:
-        result = await asyncio.to_thread(crawl_29cm_product, request.product_url)
+        async with crawl_semaphore:
+            result = await asyncio.to_thread(crawl_29cm_product, request.product_url)
         star_point = _normalize_star_point(result)
         return CrawlResponse(
             shoppingmall_name=result.get('shoppingmall_name', '29CM'),
@@ -181,7 +196,8 @@ async def crawl_29cm(request: CrawlRequest):
 @app.post("/crawl/wconcept", response_model=CrawlResponse)
 async def crawl_wconcept(request: CrawlRequest):
     try:
-        result = await asyncio.to_thread(crawl_wconcept_product, request.product_url)
+        async with crawl_semaphore:
+            result = await asyncio.to_thread(crawl_wconcept_product, request.product_url)
         star_point = _normalize_star_point(result)
         return CrawlResponse(
             shoppingmall_name=result.get('shoppingmall_name', 'W컨셉'),
